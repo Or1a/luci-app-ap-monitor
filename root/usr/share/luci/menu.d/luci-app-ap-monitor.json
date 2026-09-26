@@ -1,0 +1,28 @@
+{
+  "admin/status/ap-monitor": {
+    "title": "AP Monitor",
+    "order": 36,
+    "action": {
+      "type": "view",
+      "path": "status/ap-monitor"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-ap-monitor"
+      ]
+    }
+  },
+  "admin/status/ap-monitor/config": {
+    "title": "Monitor settings",
+    "order": 1,
+    "action": {
+      "type": "view",
+      "path": "status/ap-monitor-config"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-ap-monitor"
+      ]
+    }
+  }
+}

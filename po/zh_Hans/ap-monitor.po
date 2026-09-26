@@ -1,0 +1,390 @@
+msgid ""
+msgstr ""
+"Language: zh_Hans\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "%d min"
+msgstr "%d分钟"
+
+msgid "%dd %dh"
+msgstr "%d天 %d小时"
+
+msgid "%dh %dm"
+msgstr "%d小时 %d分"
+
+msgid "%s · Device details"
+msgstr "%s · 设备详情"
+
+msgid "%s · Wireless clients"
+msgstr "%s · 无线终端"
+
+msgid "AP Monitor"
+msgstr "AP监测"
+
+msgid "AP Monitor settings"
+msgstr "AP监测设置"
+
+msgid "API unsupported"
+msgstr "接口不支持"
+
+msgid "Add AP"
+msgstr "添加 AP"
+
+msgid "Advanced"
+msgstr "高级"
+
+msgid "All bands"
+msgstr "全部频段"
+
+msgid "Authentication"
+msgstr "登录认证"
+
+msgid "Authentication failed"
+msgstr "认证未通过"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "Band"
+msgstr "频段"
+
+msgid "Cancel editing"
+msgstr "取消填写"
+
+msgid "Channel %s"
+msgstr "信道 %s"
+
+msgid "Check the SSH username and port"
+msgstr "请检查 SSH 用户名和端口"
+
+msgid "Check the device configuration"
+msgstr "请检查设备配置"
+
+msgid "Clients: %d"
+msgstr "%d 台终端"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Connection method"
+msgstr "连接方式"
+
+msgid "Could not read client information"
+msgstr "未能读取终端信息"
+
+msgid "Credentials"
+msgstr "访问凭据"
+
+msgid "Data source"
+msgstr "数据来源"
+
+msgid "Device details"
+msgstr "设备详情"
+
+msgid "Device name"
+msgstr "设备名"
+
+msgid "Disabled"
+msgstr "已关闭"
+
+msgid "Downlink rate"
+msgstr "下行连接速率"
+
+msgid "Edit AP"
+msgstr "编辑 AP"
+
+msgid "Enable monitoring"
+msgstr "启用监测"
+
+msgid "Enter a valid management address in settings"
+msgstr "请在设置中填写有效的管理地址"
+
+msgid "Export results"
+msgstr "导出结果"
+
+msgid "Failed to read client information"
+msgstr "读取终端信息失败"
+
+msgid "Failed to read monitor settings"
+msgstr "读取监测配置失败"
+
+msgid "Failed to read password status"
+msgstr "密码状态读取失败"
+
+msgid "Failed to read system status"
+msgstr "系统状态读取失败"
+
+msgid "Failed to read the management API"
+msgstr "管理接口读取失败"
+
+msgid "Failed to read wireless status"
+msgstr "无线状态读取失败"
+
+msgid "Failed to save the login password. Please retry."
+msgstr "登录密码保存失败，请重试。"
+
+msgid "Filter by band"
+msgstr "筛选频段"
+
+msgid "Firmware version"
+msgstr "固件版本"
+
+msgid "General"
+msgstr "基本"
+
+msgid "Hardware model"
+msgstr "硬件型号"
+
+msgid "IP address"
+msgstr "IP 地址"
+
+msgid "Invalid address"
+msgstr "地址无效"
+
+msgid "Key path not set"
+msgstr "未填写密钥路径"
+
+msgid "Key path set"
+msgstr "已填写密钥路径"
+
+msgid "Less than 1 min"
+msgstr "不足1分钟"
+
+msgid "Login failed. Check the password."
+msgstr "登录失败，请检查密码"
+
+msgid "Login password not set"
+msgstr "尚未设置登录密码"
+
+msgid "MAC address"
+msgstr "MAC 地址"
+
+msgid "MAC differs from the configured address. Verify the device."
+msgstr "MAC 与设置不符，请核对设备"
+
+msgid "MAC for identity verification"
+msgstr "身份校验 MAC"
+
+msgid "Manage APs"
+msgstr "管理 AP"
+
+msgid "Management IP"
+msgstr "管理 IP"
+
+msgid "Management IP changed. Enter the login password again."
+msgstr "管理 IP 已改变，请重新填写登录密码。"
+
+msgid "Management connection"
+msgstr "管理连接"
+
+msgid "Memory usage"
+msgstr "内存占用"
+
+msgid "Monitor settings"
+msgstr "监测设置"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "No APs added yet"
+msgstr "尚未添加 AP"
+
+msgid "No matching clients"
+msgstr "没有匹配的终端"
+
+msgid "No wireless clients"
+msgstr "暂无无线终端"
+
+msgid "Not provided"
+msgstr "未提供"
+
+msgid "Not queried"
+msgstr "未读取"
+
+msgid "Not queried yet"
+msgstr "尚未查询"
+
+msgid "Optional"
+msgstr "可选"
+
+msgid "Optional. The IP address is shown if left blank."
+msgstr "可选，不填时显示 IP。"
+
+msgid "Partial data"
+msgstr "部分可读"
+
+msgid "Password must not exceed 256 characters"
+msgstr "密码不能超过 256 个字符"
+
+msgid "Password not set"
+msgstr "未设置密码"
+
+msgid "Password required"
+msgstr "待设置密码"
+
+msgid "Password saved"
+msgstr "密码已保存"
+
+msgid "Query failed"
+msgstr "查询失败"
+
+msgid "Query failed · Last updated at %s"
+msgstr "查询失败 · 上次更新于 %s"
+
+msgid "Query failed. Please retry."
+msgstr "查询失败，请重试"
+
+msgid "Query failed: %s"
+msgstr "查询失败：%s"
+
+msgid "Querying…"
+msgstr "查询中…"
+
+msgid "Read failed"
+msgstr "读取失败"
+
+msgid "Read successfully"
+msgstr "读取成功"
+
+msgid "Reading AP status…"
+msgstr "正在读取 AP 状态…"
+
+msgid "Refresh status"
+msgstr "查询状态"
+
+msgid "SSH connection failed. Check the key, host identity and network."
+msgstr "SSH 连接失败，请检查密钥、主机身份和网络"
+
+msgid "SSH port"
+msgstr "SSH 端口"
+
+msgid "SSH private key missing or path invalid"
+msgstr "SSH 私钥不存在或路径无效"
+
+msgid "SSH private key path"
+msgstr "SSH 私钥路径"
+
+msgid "SSH private key permissions are unsafe"
+msgstr "SSH 私钥权限不安全"
+
+msgid "SSH username"
+msgstr "SSH 用户名"
+
+msgid "Sample time"
+msgstr "取样时间"
+
+msgid "Search clients"
+msgstr "搜索终端"
+
+msgid "Search name, IP or MAC"
+msgstr "搜索名称、IP 或 MAC"
+
+msgid "Set login password"
+msgstr "设置登录密码"
+
+msgid "Signal"
+msgstr "信号"
+
+msgid "Some clients may be roaming"
+msgstr "部分终端可能正在漫游"
+
+msgid "Sort by name"
+msgstr "按名称排序"
+
+msgid "Sort clients"
+msgstr "终端排序"
+
+msgid "Store the private key in /root/.ssh/ on this OpenWrt router. Install the matching public key on the AP and verify its SSH host key."
+msgstr "私钥保存在本机 OpenWrt 的 /root/.ssh/；目标 AP 需已安装对应公钥，并核对 SSH 主机密钥。"
+
+msgid "System status"
+msgstr "系统状态"
+
+msgid "This firmware does not provide a client API"
+msgstr "该固件未提供终端接口"
+
+msgid "This firmware does not provide system status"
+msgstr "该固件未提供系统状态"
+
+msgid "This firmware does not provide wireless status"
+msgstr "该固件未提供无线状态"
+
+msgid "This firmware does not support wireless client queries"
+msgstr "该固件不支持查询无线终端"
+
+msgid "This firmware uses an unsupported login method"
+msgstr "暂不支持该固件的登录方式"
+
+msgid "Unavailable"
+msgstr "无法查询"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "Unknown band"
+msgstr "未知频段"
+
+msgid "Unknown channel"
+msgstr "信道未知"
+
+msgid "Unnamed device"
+msgstr "未命名设备"
+
+msgid "Unrecognized data from the client API"
+msgstr "终端接口返回的数据无法识别"
+
+msgid "Unsupported"
+msgstr "暂不支持"
+
+msgid "Unsupported login"
+msgstr "登录方式不支持"
+
+msgid "Update login password"
+msgstr "更新登录密码"
+
+msgid "Updated"
+msgstr "已读取"
+
+msgid "Updated at %s"
+msgstr "更新于 %s"
+
+msgid "Uplink rate"
+msgstr "上行连接速率"
+
+msgid "Uplink: client → AP; downlink: AP → client. Link rates are not actual download speeds."
+msgstr "上行：终端 → AP；下行：AP → 终端。连接速率不是实际下载速度。"
+
+msgid "Uptime"
+msgstr "连续运行"
+
+msgid "Verify identity"
+msgstr "身份待确认"
+
+msgid "View clients"
+msgstr "查看终端"
+
+msgid "Weakest signal first"
+msgstr "信号由弱到强"
+
+msgid "Wireless clients"
+msgstr "无线终端"
+
+msgid "Wireless status"
+msgstr "无线状态"
+
+msgid "Router login password"
+msgstr "路由器登录密码"
+
+msgid "Router HTTP API"
+msgstr "路由器 HTTP 接口"
+
+msgid "devices"
+msgstr "台"
+
+msgid "device"
+msgstr "台"
+
+msgid "e.g. Living room"
+msgstr "例如：客厅"

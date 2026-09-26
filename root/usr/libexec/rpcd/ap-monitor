@@ -1,0 +1,159 @@
+#!/usr/bin/python3
+"""Manage router HTTP credentials through authenticated rpcd calls."""
+
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import stat
+import sys
+import tempfile
+
+AUTH_FILE = "/etc/ap_monitor.auth"
+LOGIN_KEY = "a2ffa5c9be07488bbb04a3a47d3c5f6a"
+REQUIRED_UID = 0
+MAX_REQUEST_BYTES = 4096
+MAX_STORE_BYTES = 65536
+HASH_RE = re.compile(r"[0-9a-f]{40}")
+
+
+class CredentialError(Exception):
+    """An intentionally non-sensitive error suitable for the caller."""
+
+
+def validate_ip(value):
+    if not isinstance(value, str):
+        raise CredentialError("invalid_ip")
+    try:
+        return str(ipaddress.IPv4Address(value))
+    except ipaddress.AddressValueError:
+        raise CredentialError("invalid_ip") from None
+
+
+def check_private_file(descriptor):
+    metadata = os.fstat(descriptor)
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != REQUIRED_UID
+            or stat.S_IMODE(metadata.st_mode) & 0o077 or metadata.st_nlink != 1):
+        raise CredentialError("unsafe_auth_store")
+
+
+def read_credentials():
+    try:
+        descriptor = os.open(AUTH_FILE, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {}
+    try:
+        check_private_file(descriptor)
+        with os.fdopen(descriptor, "r", encoding="utf-8") as source:
+            descriptor = None
+            contents = source.read(MAX_STORE_BYTES + 1)
+        if len(contents) > MAX_STORE_BYTES:
+            raise CredentialError("invalid_auth_store")
+        credentials = json.loads(contents)
+        if not isinstance(credentials, dict):
+            raise CredentialError("invalid_auth_store")
+        for address, digest in credentials.items():
+            try:
+                validate_ip(address)
+            except CredentialError:
+                raise CredentialError("invalid_auth_store") from None
+            if not isinstance(digest, str) or not HASH_RE.fullmatch(digest):
+                raise CredentialError("invalid_auth_store")
+        return credentials
+    except (ValueError, UnicodeError):
+        raise CredentialError("invalid_auth_store") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def auth_status():
+    return {"configured": {address: True for address in read_credentials()}}
+
+
+def set_auth(arguments):
+    address = validate_ip(arguments.get("ip"))
+    password = arguments.get("password")
+    if not isinstance(password, str) or not 1 <= len(password) <= 256:
+        raise CredentialError("invalid_password")
+    try:
+        digest = hashlib.sha1((password + LOGIN_KEY).encode("utf-8")).hexdigest()
+    except UnicodeError:
+        raise CredentialError("invalid_password") from None
+
+    directory = os.path.dirname(AUTH_FILE)
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    lock_fd = None
+    temporary = None
+    try:
+        metadata = os.fstat(directory_fd)
+        if metadata.st_uid != REQUIRED_UID or stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise CredentialError("unsafe_auth_store")
+        lock_fd = os.open(AUTH_FILE + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW,
+                          0o600)
+        check_private_file(lock_fd)
+        # Lock the separate, stable inode: replacing the data file must not unlock it.
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        credentials = read_credentials()
+        credentials[address] = digest
+        encoded = json.dumps(credentials, sort_keys=True) + "\n"
+        if len(encoded) > MAX_STORE_BYTES:
+            raise CredentialError("auth_store_full")
+        descriptor, temporary = tempfile.mkstemp(prefix=".ap-monitor-auth-", dir=directory)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as destination:
+            os.fchmod(destination.fileno(), 0o600)
+            destination.write(encoded)
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, AUTH_FILE)
+        temporary = None
+        os.fsync(directory_fd)
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+        if lock_fd is not None:
+            os.close(lock_fd)
+        os.close(directory_fd)
+    return {"success": True}
+
+
+def dispatch(method, arguments):
+    if os.geteuid() != REQUIRED_UID:
+        raise CredentialError("permission_denied")
+    if not isinstance(arguments, dict):
+        raise CredentialError("invalid_request")
+    if method == "auth_status":
+        return auth_status()
+    if method == "set_auth":
+        return set_auth(arguments)
+    raise CredentialError("unknown_method")
+
+
+def main():
+    if sys.argv[1:] == ["list"]:
+        print(json.dumps({"auth_status": {}, "set_auth": {"ip": "", "password": ""}}))
+        return
+    method = sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == "call" else ""
+    try:
+        if not method:
+            raise CredentialError("invalid_request")
+        payload = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+        if len(payload) > MAX_REQUEST_BYTES:
+            raise CredentialError("invalid_request")
+        try:
+            arguments = json.loads(payload or b"{}")
+        except (ValueError, UnicodeError):
+            raise CredentialError("invalid_request") from None
+        result = dispatch(method, arguments)
+    except CredentialError as error:
+        result = {"success": False, "error": str(error)}
+    except Exception:
+        # Neither Python tracebacks nor credential contents belong in RPC responses.
+        result = {"success": False, "error": "credential_store_failed"}
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

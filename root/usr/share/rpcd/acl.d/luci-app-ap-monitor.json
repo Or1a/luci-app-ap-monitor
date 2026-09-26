@@ -1,0 +1,15 @@
+{
+  "luci-app-ap-monitor": {
+    "description": "Read AP status and manage the monitored AP list",
+    "read": {
+      "cgi-io": [ "exec" ],
+      "file": { "/usr/libexec/ap-monitor": [ "exec" ] },
+      "ubus": { "ap-monitor": [ "auth_status" ] },
+      "uci": [ "ap_monitor" ]
+    },
+    "write": {
+      "ubus": { "ap-monitor": [ "set_auth" ] },
+      "uci": [ "ap_monitor" ]
+    }
+  }
+}

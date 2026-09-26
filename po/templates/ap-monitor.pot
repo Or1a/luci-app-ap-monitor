@@ -1,0 +1,387 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "%d min"
+msgstr ""
+
+msgid "%dd %dh"
+msgstr ""
+
+msgid "%dh %dm"
+msgstr ""
+
+msgid "%s · Device details"
+msgstr ""
+
+msgid "%s · Wireless clients"
+msgstr ""
+
+msgid "AP Monitor"
+msgstr ""
+
+msgid "AP Monitor settings"
+msgstr ""
+
+msgid "API unsupported"
+msgstr ""
+
+msgid "Add AP"
+msgstr ""
+
+msgid "Advanced"
+msgstr ""
+
+msgid "All bands"
+msgstr ""
+
+msgid "Authentication"
+msgstr ""
+
+msgid "Authentication failed"
+msgstr ""
+
+msgid "Auto"
+msgstr ""
+
+msgid "Band"
+msgstr ""
+
+msgid "Cancel editing"
+msgstr ""
+
+msgid "Channel %s"
+msgstr ""
+
+msgid "Check the SSH username and port"
+msgstr ""
+
+msgid "Check the device configuration"
+msgstr ""
+
+msgid "Clients: %d"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Connection method"
+msgstr ""
+
+msgid "Could not read client information"
+msgstr ""
+
+msgid "Credentials"
+msgstr ""
+
+msgid "Data source"
+msgstr ""
+
+msgid "Device details"
+msgstr ""
+
+msgid "Device name"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Downlink rate"
+msgstr ""
+
+msgid "Edit AP"
+msgstr ""
+
+msgid "Enable monitoring"
+msgstr ""
+
+msgid "Enter a valid management address in settings"
+msgstr ""
+
+msgid "Export results"
+msgstr ""
+
+msgid "Failed to read client information"
+msgstr ""
+
+msgid "Failed to read monitor settings"
+msgstr ""
+
+msgid "Failed to read password status"
+msgstr ""
+
+msgid "Failed to read system status"
+msgstr ""
+
+msgid "Failed to read the management API"
+msgstr ""
+
+msgid "Failed to read wireless status"
+msgstr ""
+
+msgid "Failed to save the login password. Please retry."
+msgstr ""
+
+msgid "Filter by band"
+msgstr ""
+
+msgid "Firmware version"
+msgstr ""
+
+msgid "General"
+msgstr ""
+
+msgid "Hardware model"
+msgstr ""
+
+msgid "IP address"
+msgstr ""
+
+msgid "Invalid address"
+msgstr ""
+
+msgid "Key path not set"
+msgstr ""
+
+msgid "Key path set"
+msgstr ""
+
+msgid "Less than 1 min"
+msgstr ""
+
+msgid "Login failed. Check the password."
+msgstr ""
+
+msgid "Login password not set"
+msgstr ""
+
+msgid "MAC address"
+msgstr ""
+
+msgid "MAC differs from the configured address. Verify the device."
+msgstr ""
+
+msgid "MAC for identity verification"
+msgstr ""
+
+msgid "Manage APs"
+msgstr ""
+
+msgid "Management IP"
+msgstr ""
+
+msgid "Management IP changed. Enter the login password again."
+msgstr ""
+
+msgid "Management connection"
+msgstr ""
+
+msgid "Memory usage"
+msgstr ""
+
+msgid "Monitor settings"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "No APs added yet"
+msgstr ""
+
+msgid "No matching clients"
+msgstr ""
+
+msgid "No wireless clients"
+msgstr ""
+
+msgid "Not provided"
+msgstr ""
+
+msgid "Not queried"
+msgstr ""
+
+msgid "Not queried yet"
+msgstr ""
+
+msgid "Optional"
+msgstr ""
+
+msgid "Optional. The IP address is shown if left blank."
+msgstr ""
+
+msgid "Partial data"
+msgstr ""
+
+msgid "Password must not exceed 256 characters"
+msgstr ""
+
+msgid "Password not set"
+msgstr ""
+
+msgid "Password required"
+msgstr ""
+
+msgid "Password saved"
+msgstr ""
+
+msgid "Query failed"
+msgstr ""
+
+msgid "Query failed · Last updated at %s"
+msgstr ""
+
+msgid "Query failed. Please retry."
+msgstr ""
+
+msgid "Query failed: %s"
+msgstr ""
+
+msgid "Querying…"
+msgstr ""
+
+msgid "Read failed"
+msgstr ""
+
+msgid "Read successfully"
+msgstr ""
+
+msgid "Reading AP status…"
+msgstr ""
+
+msgid "Refresh status"
+msgstr ""
+
+msgid "SSH connection failed. Check the key, host identity and network."
+msgstr ""
+
+msgid "SSH port"
+msgstr ""
+
+msgid "SSH private key missing or path invalid"
+msgstr ""
+
+msgid "SSH private key path"
+msgstr ""
+
+msgid "SSH private key permissions are unsafe"
+msgstr ""
+
+msgid "SSH username"
+msgstr ""
+
+msgid "Sample time"
+msgstr ""
+
+msgid "Search clients"
+msgstr ""
+
+msgid "Search name, IP or MAC"
+msgstr ""
+
+msgid "Set login password"
+msgstr ""
+
+msgid "Signal"
+msgstr ""
+
+msgid "Some clients may be roaming"
+msgstr ""
+
+msgid "Sort by name"
+msgstr ""
+
+msgid "Sort clients"
+msgstr ""
+
+msgid "Store the private key in /root/.ssh/ on this OpenWrt router. Install the matching public key on the AP and verify its SSH host key."
+msgstr ""
+
+msgid "System status"
+msgstr ""
+
+msgid "This firmware does not provide a client API"
+msgstr ""
+
+msgid "This firmware does not provide system status"
+msgstr ""
+
+msgid "This firmware does not provide wireless status"
+msgstr ""
+
+msgid "This firmware does not support wireless client queries"
+msgstr ""
+
+msgid "This firmware uses an unsupported login method"
+msgstr ""
+
+msgid "Unavailable"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "Unknown band"
+msgstr ""
+
+msgid "Unknown channel"
+msgstr ""
+
+msgid "Unnamed device"
+msgstr ""
+
+msgid "Unrecognized data from the client API"
+msgstr ""
+
+msgid "Unsupported"
+msgstr ""
+
+msgid "Unsupported login"
+msgstr ""
+
+msgid "Update login password"
+msgstr ""
+
+msgid "Updated"
+msgstr ""
+
+msgid "Updated at %s"
+msgstr ""
+
+msgid "Uplink rate"
+msgstr ""
+
+msgid "Uplink: client → AP; downlink: AP → client. Link rates are not actual download speeds."
+msgstr ""
+
+msgid "Uptime"
+msgstr ""
+
+msgid "Verify identity"
+msgstr ""
+
+msgid "View clients"
+msgstr ""
+
+msgid "Weakest signal first"
+msgstr ""
+
+msgid "Wireless clients"
+msgstr ""
+
+msgid "Wireless status"
+msgstr ""
+
+msgid "Router login password"
+msgstr ""
+
+msgid "Router HTTP API"
+msgstr ""
+
+msgid "devices"
+msgstr ""
+
+msgid "device"
+msgstr ""
+
+msgid "e.g. Living room"
+msgstr ""

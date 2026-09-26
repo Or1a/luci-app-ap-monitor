@@ -1,0 +1,690 @@
+#!/usr/bin/python3
+"""One-shot, read-only AP status queries."""
+
+import glob
+import hashlib
+import http.client
+import ipaddress
+import json
+import math
+import os
+import re
+import secrets
+import stat
+import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
+import urllib.parse
+
+CONFIG = "ap_monitor"
+AUTH_FILE = "/etc/ap_monitor.auth"
+LOGIN_KEY = "a2ffa5c9be07488bbb04a3a47d3c5f6a"
+MAC_RE = re.compile(r"^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$", re.I)
+REQUEST_TIMEOUT = 5
+MAX_RESPONSE_BYTES = 1024 * 1024
+PHASES = ("management", "authentication", "clients", "radios", "system")
+SSH_KEY_ROOT = "/root/.ssh/"
+SSH_SCRIPT = r'''printf 'APMON1'
+printf '\036UPTIME\037'; cat /proc/uptime 2>/dev/null
+printf '\036MEMINFO\037'; cat /proc/meminfo 2>/dev/null
+printf '\036BOARD\037'; ubus -S call system board '{}' 2>/dev/null
+for object in $(ubus -S list 'hostapd.*' 2>/dev/null); do
+    case "$object" in hostapd.*) ;; *) continue ;; esac
+    printf '\036STATUS:%s\037' "$object"
+    ubus -S call "$object" get_status '{}' 2>/dev/null
+    printf '\036CLIENTS:%s\037' "$object"
+    ubus -S call "$object" get_clients '{}' 2>/dev/null
+done
+'''
+
+
+class QueryError(Exception):
+    def __init__(self, code, status="error"):
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+class APConnection:
+    """One direct connection context per AP; HTTPConnection honours peer closure."""
+
+    def __init__(self, ip):
+        self.connection = http.client.HTTPConnection(ip, 80, timeout=REQUEST_TIMEOUT)
+        self.responded = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *unused):
+        self.connection.close()
+
+    def request(self, path, data=None):
+        # Callers supply only fixed local paths; never follow redirects or proxies.
+        if not path.startswith("/") or path.startswith("//"):
+            raise QueryError("invalid_request")
+        headers = {"Connection": "keep-alive"}
+        if data is not None:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+        try:
+            self.connection.request("POST" if data is not None else "GET", path,
+                                    body=data, headers=headers)
+            response = self.connection.getresponse()
+            self.responded = True
+            try:
+                content = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(content) > MAX_RESPONSE_BYTES:
+                    self.connection.close()
+                    raise QueryError("response_too_large")
+                status = response.status
+            finally:
+                response.close()
+            if status in (301, 302, 303, 307, 308):
+                raise QueryError("redirect_refused")
+            if status == 404:
+                raise QueryError("endpoint_unavailable", "unsupported")
+            if not 200 <= status < 300:
+                raise QueryError("http_error")
+            return content
+        except QueryError:
+            raise
+        except (OSError, http.client.HTTPException):
+            # An interrupted response cannot be reused; the next independent query
+            # may open a fresh connection. Failed requests are never retried here.
+            self.connection.close()
+            raise QueryError("request_failed") from None
+
+    def get_json(self, path, data=None):
+        try:
+            result = json.loads(self.request(path, data))
+        except (ValueError, UnicodeError):
+            raise QueryError("invalid_response") from None
+        if not isinstance(result, dict):
+            raise QueryError("invalid_response")
+        return result
+
+
+def read_config():
+    command = ["ubus", "call", "uci", "get", json.dumps({"config": CONFIG})]
+    response = subprocess.run(command, capture_output=True, text=True, timeout=4, check=True)
+    values = json.loads(response.stdout).get("values", {})
+    aps = [item for item in values.values() if item.get(".type") == "ap"]
+    return sorted(aps, key=lambda item: int(item.get(".index", 0)))
+
+
+def read_auth():
+    try:
+        metadata = os.stat(AUTH_FILE)
+        if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o077:
+            return {}
+        with open(AUTH_FILE, encoding="utf-8") as file:
+            result = json.load(file)
+        return result if isinstance(result, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def valid_ipv4(value):
+    try:
+        return str(ipaddress.IPv4Address(value)) if isinstance(value, str) else ""
+    except ipaddress.AddressValueError:
+        return ""
+
+
+def ssh_identity(config):
+    user = str(config.get('ssh_user') or 'root')
+    key = str(config.get('ssh_key') or '')
+    try:
+        port = int(str(config.get('ssh_port') or '22'))
+    except ValueError:
+        raise QueryError('invalid_ssh_settings') from None
+    if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535:
+        raise QueryError('invalid_ssh_settings')
+    if not key.startswith(SSH_KEY_ROOT) or os.path.realpath(key) != key:
+        raise QueryError('ssh_key_missing')
+    try:
+        metadata = os.lstat(key)
+    except OSError:
+        raise QueryError('ssh_key_missing') from None
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0
+            or stat.S_IMODE(metadata.st_mode) & 0o077 or metadata.st_nlink != 1):
+        raise QueryError('ssh_key_unsafe')
+    return user, port, key
+
+
+def ssh_snapshot(config):
+    user, port, key = ssh_identity(config)
+    command = ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+               '-o', 'PasswordAuthentication=no', '-i', key, '-p', str(port),
+               '-l', user, config['ip'], 'sh -s']
+    environment = os.environ.copy()
+    for name in ('DROPBEAR_PASSWORD', 'SSH_ASKPASS', 'SSH_AUTH_SOCK'):
+        environment.pop(name, None)
+    try:
+        response = subprocess.run(command, input=SSH_SCRIPT.encode(), capture_output=True,
+                                  timeout=18, env=environment)
+    except (OSError, subprocess.TimeoutExpired):
+        raise QueryError('ssh_connection_failed') from None
+    if response.returncode != 0:
+        raise QueryError('ssh_connection_failed')
+    if len(response.stdout) > MAX_RESPONSE_BYTES or not response.stdout.startswith(b'APMON1'):
+        raise QueryError('invalid_response')
+    frames = {}
+    for frame in response.stdout[6:].decode('utf-8', errors='replace').split('\x1e'):
+        if not frame:
+            continue
+        if '\x1f' not in frame:
+            raise QueryError('invalid_response')
+        name, content = frame.split('\x1f', 1)
+        if name in frames or len(frames) >= 35:
+            raise QueryError('invalid_response')
+        frames[name] = content.strip()
+    return frames
+
+
+def ssh_radios(frames):
+    names = sorted(name for name in frames if name.startswith('STATUS:'))
+    if not names:
+        raise QueryError('wireless_unavailable', 'unsupported')
+    radios = []
+    for name in names:
+        try:
+            status = json.loads(frames[name])
+        except ValueError:
+            raise QueryError('invalid_response') from None
+        if not isinstance(status, dict):
+            raise QueryError('invalid_response')
+        band = band_for_frequency(status.get('freq'))
+        channel = status.get('channel')
+        enabled = status.get('status')
+        radios.append({'index': len(radios) + 1, 'band': band,
+                       'enabled': True if enabled == 'ENABLED' else False if enabled == 'DISABLED' else None,
+                       'ssid': status.get('ssid') if isinstance(status.get('ssid'), str) else '',
+                       'channel': channel if isinstance(channel, int) and 0 < channel <= 233 else None,
+                       'automatic_channel': False, 'interface': name[7:]})
+    return {'radios': radios}
+
+
+def band_for_frequency(value):
+    frequency = finite_number(value, maximum=8000)
+    if frequency is not None:
+        if 2400 <= frequency <= 2500:
+            return '2g'
+        if 4900 <= frequency < 5925:
+            return '5g'
+        if 5925 <= frequency <= 7125:
+            return '6g'
+    return 'unknown'
+
+
+def ssh_client_metrics(details):
+    metrics = {}
+    signal = details.get('signal')
+    if isinstance(signal, int) and not isinstance(signal, bool):
+        # Some ubus encoders expose signed RSSI through the unsigned u32 field.
+        if 2 ** 31 <= signal < 2 ** 32:
+            signal -= 2 ** 32
+        if -127 <= signal < 0:
+            metrics['signal_dbm'] = signal
+    rate = details.get('rate')
+    if isinstance(rate, dict):
+        for source, destination in [('rx', 'uplink_mbps'), ('tx', 'downlink_mbps')]:
+            value = finite_number(rate.get(source), maximum=100000000)
+            if value is not None and value > 0:
+                metrics[destination] = round(value / 1000, 3)
+    return metrics
+
+
+def ssh_clients(frames, radios, known_ap_macs, leases, router_macs):
+    names = sorted(name for name in frames if name.startswith('CLIENTS:'))
+    if not names:
+        raise QueryError('wireless_unavailable', 'unsupported')
+    clients, ap_links, seen = [], [], set()
+    counts = {'2g': 0, '5g': 0, '6g': 0, 'unknown': 0}
+    interface_counts = {}
+    by_interface = {radio['interface']: radio for radio in radios}
+    for name in names:
+        interface = name[8:]
+        try:
+            response = json.loads(frames[name])
+        except ValueError:
+            raise QueryError('invalid_response') from None
+        associations = response.get('clients') if isinstance(response, dict) else None
+        if not isinstance(associations, dict):
+            raise QueryError('invalid_response')
+        band = by_interface.get(interface, {}).get('band', 'unknown')
+        if band == 'unknown':
+            band = band_for_frequency(response.get('freq'))
+        interface_counts[interface] = 0
+        for address, details in associations.items():
+            mac = address.lower()
+            if not MAC_RE.fullmatch(mac) or not isinstance(details, dict):
+                raise QueryError('invalid_response')
+            associated = flag(details.get('assoc'))
+            if associated is None:
+                raise QueryError('invalid_response')
+            if not associated:
+                continue
+            if mac not in router_macs and mac not in known_ap_macs:
+                interface_counts[interface] += 1
+            if mac in seen:
+                continue
+            seen.add(mac)
+            if mac in router_macs:
+                continue
+            if mac in known_ap_macs:
+                ap_links.append({'name': known_ap_macs[mac]['name'],
+                                 'ip': known_ap_macs[mac]['ip'], 'mac': mac, 'band': band})
+                continue
+            counts[band] += 1
+            lease = leases.get(mac, {})
+            clients.append({'name': client_name({}, lease, mac), 'ip': lease.get('ip') or '',
+                            'mac': mac, 'online': True, 'band': band,
+                            **ssh_client_metrics(details)})
+    clients.sort(key=lambda item: item['name'].casefold())
+    return {'clients': clients, 'client_count': len(clients),
+            'association_count': len(seen), 'ap_links': ap_links,
+            'attribution': 'radio_association', 'radio_counts': counts,
+            'interface_counts': interface_counts}
+
+
+def ssh_system(frames):
+    result = {}
+    uptime = (frames.get('UPTIME') or '').split()
+    seconds = finite_number(uptime[0], maximum=2 ** 53 - 1) if uptime else None
+    if seconds is not None:
+        result['uptime_seconds'] = int(seconds)
+    memory = {}
+    for line in (frames.get('MEMINFO') or '').splitlines():
+        match = re.fullmatch(r'(MemTotal|MemAvailable):\s*(\d+)\s+kB', line.strip())
+        if match:
+            memory[match.group(1)] = int(match.group(2))
+    total, available = memory.get('MemTotal', 0), memory.get('MemAvailable')
+    if total > 0 and available is not None and 0 <= available <= total:
+        result['memory_percent'] = round((total - available) * 100 / total, 2)
+    if not result:
+        raise QueryError('invalid_response')
+    output = {'system': result}
+    try:
+        board = json.loads(frames.get('BOARD', ''))
+        if isinstance(board, dict):
+            release = board.get('release')
+            device = device_info(board.get('model'),
+                                 release.get('description') if isinstance(release, dict) else None)
+            if device:
+                output['device'] = device
+    except (ValueError, TypeError):
+        pass
+    return output
+
+
+def read_dhcp():
+    leases = {}
+    now = time.time()
+    try:
+        with open("/tmp/dhcp.leases", encoding="utf-8") as file:
+            for line in file:
+                fields = line.split()
+                if len(fields) < 4 or not MAC_RE.fullmatch(fields[1]):
+                    continue
+                try:
+                    expires = int(fields[0])
+                except ValueError:
+                    continue
+                if expires != 0 and expires <= now:
+                    continue
+                address = valid_ipv4(fields[2])
+                if address:
+                    leases[fields[1].lower()] = {"ip": address, "name": fields[3]}
+    except OSError:
+        pass
+    return leases
+
+
+def local_macs():
+    addresses = set()
+    for path in glob.glob('/sys/class/net/*/address'):
+        try:
+            with open(path, encoding='ascii') as file:
+                address = file.read().strip().lower()
+            if MAC_RE.fullmatch(address):
+                addresses.add(address)
+        except OSError:
+            continue
+    return addresses
+
+
+def flag(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if str(value).lower() in ('false', '0'):
+        return False
+    if str(value).lower() in ('true', '1'):
+        return True
+    return None
+
+
+def login_context(page):
+    if isinstance(page, bytes):
+        page = page.decode('utf-8', errors='replace')
+    device = re.search(r'''\bdeviceId\s*=\s*['"]([0-9a-f:]{17})['"]''', page, re.I)
+    key = re.search(r'''\bkey\s*:\s*['"]([0-9a-f]{32})['"]''', page, re.I)
+    if (not device or not MAC_RE.fullmatch(device.group(1)) or not key
+            or key.group(1).lower() != LOGIN_KEY):
+        raise QueryError('unsupported_auth', 'unsupported')
+    return device.group(1).lower()
+
+
+def observed_mac(ip):
+    try:
+        output = subprocess.run(["ip", "-4", "neigh", "show", "to", ip],
+                                capture_output=True, text=True, timeout=2).stdout
+        match = re.search(r"\blladdr\s+([0-9a-f:]{17})\b", output, re.I)
+        return match.group(1).lower() if match else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def authenticate(connection, inner_hash, page):
+    if not isinstance(inner_hash, str) or not re.fullmatch(r"[0-9a-f]{40}", inner_hash):
+        raise QueryError("missing_auth", "skipped")
+    device_id = login_context(page)
+    nonce = f"0_{device_id}_{int(time.time())}_{secrets.randbelow(10000)}"
+    digest = hashlib.sha1((nonce + inner_hash).encode("ascii")).hexdigest()
+    data = urllib.parse.urlencode({"username": "admin", "password": digest,
+                                    "logtype": 2, "nonce": nonce}).encode("ascii")
+    result = connection.get_json("/cgi-bin/luci/api/xqsystem/login", data)
+    token = result.get("token")
+    if result.get("code") != 0 or not isinstance(token, str) or not token or len(token) > 256:
+        raise QueryError("auth_failed")
+    return urllib.parse.quote(token, safe="")
+
+
+def client_name(device, lease, mac):
+    for name in (device.get("name"), device.get("hostname"),
+                 device.get("origin_name"), lease.get("name")):
+        if isinstance(name, str) and name not in ("", "*") and name.lower() != mac:
+            return name
+    return mac.upper()
+
+
+def client_ip(device, lease):
+    addresses = device.get("ip")
+    if isinstance(addresses, list):
+        for item in addresses:
+            if isinstance(item, dict) and flag(item.get("active")) is True:
+                address = valid_ipv4(item.get("ip"))
+                if address:
+                    return address
+    elif valid_ipv4(addresses):
+        return addresses
+    return valid_ipv4(lease.get("ip"))
+
+
+def require_success(result):
+    if not isinstance(result, dict):
+        raise QueryError("invalid_response")
+    if result.get("code") != 0:
+        raise QueryError("api_failed")
+
+
+def parse_clients(stations, known_ap_macs, leases, router_macs):
+    require_success(stations)
+    if not isinstance(stations.get('list'), list):
+        raise QueryError("invalid_response")
+    clients, ap_links, seen = [], [], set()
+    band_counts = {'2g': 0, '5g': 0, 'unknown': 0}
+    for device in stations['list']:
+        if not isinstance(device, dict):
+            raise QueryError("invalid_response")
+        mac = str(device.get("mac", "")).lower()
+        if not MAC_RE.fullmatch(mac):
+            raise QueryError("invalid_response")
+        if mac in seen:
+            continue
+        seen.add(mac)
+        if mac in router_macs:
+            continue
+        # This index convention is verified on the currently supported router HTTP APIs.
+        band = {'1': '2g', '2': '5g'}.get(str(device.get('wifiIndex')), 'unknown')
+        if mac in known_ap_macs:
+            ap_links.append({'name': known_ap_macs[mac]['name'], 'ip': known_ap_macs[mac]['ip'],
+                             'mac': mac, 'band': band})
+            continue
+        band_counts[band] += 1
+        lease = leases.get(mac, {})
+        clients.append({"name": client_name(device, lease, mac),
+                        "ip": client_ip(device, lease), "mac": mac,
+                        "online": True, "band": band})
+    clients.sort(key=lambda item: item["name"].casefold())
+    return {"clients": clients, "client_count": len(clients),
+            "association_count": len(seen), "ap_links": ap_links,
+            "attribution": "radio_association", "radio_counts": band_counts}
+
+
+def parse_radios(radio):
+    require_success(radio)
+    if not isinstance(radio.get('info'), list):
+        raise QueryError("invalid_response")
+    radios = []
+    for index, info in enumerate(radio['info'], 1):
+        if not isinstance(info, dict):
+            raise QueryError("invalid_response")
+        current = info.get('channelInfo') if isinstance(info.get('channelInfo'), dict) else {}
+        channel = current.get('channel')
+        radios.append({'index': index, 'band': {1: '2g', 2: '5g'}.get(index, 'unknown'),
+                       'enabled': flag(info.get('status')), 'ssid': str(info.get('ssid') or ''),
+                       'channel': int(channel) if str(channel).isdigit() and 0 < int(channel) <= 233 else None,
+                       'automatic_channel': str(info.get('channel')) == '0'})
+    return {"radios": radios}
+
+
+def finite_number(value, minimum=0, maximum=None):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number) or number < minimum or (maximum is not None and number > maximum):
+        return None
+    return number
+
+
+def parse_system(system):
+    require_success(system)
+    # Only verified metric fields are exposed; never return the raw status response.
+    metrics = {}
+    uptime = finite_number(system.get('upTime'), maximum=2 ** 53 - 1)
+    if uptime is not None:
+        metrics['uptime_seconds'] = int(uptime)
+    memory = system.get('mem')
+    usage = finite_number(memory.get('usage'), maximum=1) if isinstance(memory, dict) else None
+    if usage is not None:
+        metrics['memory_percent'] = round(usage * 100, 2)
+    # cpu.load is a ratio, but its sampling reliability has not been verified.
+    if not metrics:
+        raise QueryError('invalid_response')
+    result = {"system": metrics}
+    hardware = system.get('hardware')
+    if isinstance(hardware, dict):
+        device = device_info(hardware.get('displayName') or hardware.get('platform'),
+                             hardware.get('DisplayRomVer') or hardware.get('version'))
+        if device:
+            result['device'] = device
+    return result
+
+
+def device_info(model, firmware):
+    result = {}
+    for key, value in [('model', model), ('firmware', firmware)]:
+        if isinstance(value, str) and 0 < len(value.strip()) <= 160 and not any(ord(c) < 32 for c in value):
+            result[key] = value.strip()
+    return result
+
+
+def new_result(config):
+    ip = str(config.get("ip", ""))
+    return {"name": str(config.get("name") or ip or "AP"), "ip": ip,
+            "driver": str(config.get('driver') or 'router_http'), "device": {},
+            "expected_mac": str(config.get("mac", "")).lower(),
+            "state": "offline", "http_ok": False, "observed_mac": "", "identity": "",
+            "clients": [], "client_count": None, "radio_counts": None,
+            "association_count": None, "ap_links": [], "radios": [], "system": {},
+            "clients_error": "", "radios_error": "", "system_error": "",
+            "attribution": "unverified", "checked_at": int(time.time()),
+            "query_status": "failed",
+            "checks": {phase: {"status": "skipped", "error": "not_queried"} for phase in PHASES}}
+
+
+def mark(result, phase, status, error=""):
+    result['checks'][phase] = {'status': status, 'error': error}
+    if phase in ('clients', 'radios', 'system'):
+        result[phase + '_error'] = error
+
+
+def mark_error(result, phase, error):
+    if isinstance(error, QueryError):
+        mark(result, phase, error.status, error.code)
+    else:
+        mark(result, phase, 'error', 'request_failed')
+
+
+def skip_remaining(result, reason):
+    for phase in PHASES:
+        if result['checks'][phase]['status'] == 'skipped':
+            mark(result, phase, 'skipped', reason)
+
+
+def finish(result):
+    result['checked_at'] = int(time.time())
+    statuses = [result['checks'][phase]['status'] for phase in PHASES]
+    result['query_status'] = 'ok' if all(status == 'ok' for status in statuses) else (
+        'partial' if 'ok' in statuses else 'failed')
+    return result
+
+
+def check_openwrt_ssh(config, known_ap_macs, leases, router_macs):
+    result = new_result(config)
+    if not valid_ipv4(result['ip']):
+        result['state'] = 'invalid_ip'
+        mark(result, 'management', 'error', 'invalid_ip')
+        skip_remaining(result, 'invalid_ip')
+        return finish(result)
+    try:
+        frames = ssh_snapshot(config)
+    except Exception as error:
+        mark_error(result, 'management', error)
+        skip_remaining(result, result['checks']['management']['error'])
+        return finish(result)
+    result['state'] = 'online'
+    mark(result, 'management', 'ok')
+    mark(result, 'authentication', 'ok')
+    try:
+        result.update(ssh_radios(frames))
+        mark(result, 'radios', 'ok')
+    except Exception as error:
+        mark_error(result, 'radios', error)
+    try:
+        result.update(ssh_clients(frames, result['radios'], known_ap_macs, leases, router_macs))
+        mark(result, 'clients', 'ok')
+    except Exception as error:
+        mark_error(result, 'clients', error)
+    try:
+        result.update(ssh_system(frames))
+        mark(result, 'system', 'ok')
+    except Exception as error:
+        mark_error(result, 'system', error)
+    return finish(result)
+
+
+def check_ap(config, auth, known_ap_macs, leases, router_macs):
+    result = new_result(config)
+    ip = result['ip']
+    if config.get('driver') == 'openwrt_ssh':
+        return check_openwrt_ssh(config, known_ap_macs, leases, router_macs)
+    if config.get('driver', 'router_http') != 'router_http':
+        result['state'] = 'unsupported_driver'
+        mark(result, 'management', 'unsupported', 'unsupported_driver')
+        skip_remaining(result, 'unsupported_driver')
+        return finish(result)
+    if not valid_ipv4(ip):
+        result['state'] = 'invalid_ip'
+        mark(result, 'management', 'error', 'invalid_ip')
+        skip_remaining(result, 'invalid_ip')
+        return finish(result)
+
+    try:
+        with APConnection(ip) as connection:
+            try:
+                page = connection.request('/cgi-bin/luci/web')
+                result.update(state='online', http_ok=True)
+                mark(result, 'management', 'ok')
+            except Exception as error:
+                result['http_ok'] = connection.responded
+                mark_error(result, 'management', error)
+                skip_remaining(result, 'management_failed')
+                return finish(result)
+
+            actual = observed_mac(ip)
+            result['observed_mac'] = actual
+            expected = result['expected_mac']
+            result['identity'] = ('match' if expected == actual else 'mismatch') if expected and actual else 'unverified'
+            if result['identity'] == 'mismatch':
+                skip_remaining(result, 'identity_mismatch')
+                return finish(result)
+
+            try:
+                token = authenticate(connection, auth.get(ip), page)
+                mark(result, 'authentication', 'ok')
+            except Exception as error:
+                mark_error(result, 'authentication', error)
+                skip_remaining(result, result['checks']['authentication']['error'])
+                return finish(result)
+
+            prefix = f'/cgi-bin/luci/;stok={token}/api/'
+            queries = (
+                ('clients', 'xqnetwork/wifi_connect_devices',
+                 lambda response: parse_clients(response, known_ap_macs, leases, router_macs)),
+                ('radios', 'xqnetwork/wifi_detail_all', parse_radios),
+                ('system', 'misystem/status', parse_system),
+            )
+            for phase, path, parser in queries:
+                try:
+                    result.update(parser(connection.get_json(prefix + path)))
+                    mark(result, phase, 'ok')
+                except Exception as error:
+                    mark_error(result, phase, error)
+    except Exception:
+        # Keep every AP independent; never emit a traceback or a URL containing a token.
+        skip_remaining(result, 'request_failed')
+        if result['checks']['management']['status'] == 'skipped':
+            mark(result, 'management', 'error', 'request_failed')
+    return finish(result)
+
+
+def main():
+    try:
+        aps = read_config()
+        auth = read_auth()
+        leases = read_dhcp()
+        router_macs = local_macs()
+        known = {str(ap.get('mac', '')).lower(): {'name': ap.get('name') or ap.get('ip') or 'AP', 'ip': ap.get('ip', '')} for ap in aps}
+        active = [ap for ap in aps if str(ap.get('enabled', '1')) == '1']
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(pool.map(lambda ap: check_ap(ap, auth, known, leases, router_macs), active))
+        owners = {}
+        for ap in results:
+            for client in ap['clients']:
+                owners.setdefault(client['mac'], set()).add(ap['ip'])
+        for ap in results:
+            ap['duplicate_associations'] = [client['mac'] for client in ap['clients']
+                                            if len(owners[client['mac']]) > 1]
+        print(json.dumps({'aps': results}, ensure_ascii=False, allow_nan=False))
+    except Exception as error:
+        print(json.dumps({"aps": [], "error": type(error).__name__}))
+
+
+if __name__ == "__main__":
+    main()
