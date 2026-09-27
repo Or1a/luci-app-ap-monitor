@@ -1,0 +1,73 @@
+name: Build release packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        openwrt: [24.10.7, 25.12.5]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Prepare local package feed
+        run: |
+          mkdir -p feed/luci-app-ap-monitor artifacts
+          git archive HEAD | tar -x -C feed/luci-app-ap-monitor
+
+      - name: Build with the OpenWrt SDK
+        uses: openwrt/gh-action-sdk@f5813d30eeef3534b58ac7e79c5d8842b6035434
+        env:
+          ARCH: x86_64-${{ matrix.openwrt }}
+          ARTIFACTS_DIR: ${{ github.workspace }}/artifacts
+          FEED_DIR: ${{ github.workspace }}/feed
+          PACKAGES: luci-app-ap-monitor
+
+      - name: Stage installable package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t packages < <(find artifacts/bin/packages -type f \
+            \( -name 'luci-app-ap-monitor*.ipk' -o -name 'luci-app-ap-monitor*.apk' \))
+          test "${#packages[@]}" -eq 1
+          package="${packages[0]}"
+          name="$(basename "$package")"
+          mkdir -p release-assets
+          cp "$package" "release-assets/${name%.*}-openwrt-${{ matrix.openwrt }}.${name##*.}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: package-${{ matrix.openwrt }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: package-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Attach packages and checksums to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          test "$(find . -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' \) | wc -l)" -eq 2
+          sha256sum -- *.ipk *.apk > SHA256SUMS
+          gh release upload "$GITHUB_REF_NAME" ./*.ipk ./*.apk SHA256SUMS
