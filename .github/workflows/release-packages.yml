@@ -39,6 +39,10 @@ jobs:
           test "${#packages[@]}" -eq 1
           package="${packages[0]}"
           name="$(basename "$package")"
+          [[ "$name" == *"${GITHUB_REF_NAME#v}"* ]]
+          if [[ "$name" == *.ipk ]]; then
+            tar -xOzf "$package" ./control.tar.gz | tar -xzO ./control | grep -qx 'Architecture: all'
+          fi
           mkdir -p release-assets
           cp "$package" "release-assets/${name%.*}-openwrt-${{ matrix.openwrt }}.${name##*.}"
 

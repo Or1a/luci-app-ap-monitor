@@ -1,9 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-ap-monitor
-PKG_VERSION:=1.6.0
+PKG_VERSION:=1.6.1
 PKG_RELEASE:=1
-PKGARCH:=all
 PKG_BUILD_DEPENDS:=luci-base/host
 
 include $(INCLUDE_DIR)/package.mk
@@ -13,6 +12,7 @@ define Package/luci-app-ap-monitor
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=AP status monitor for LuCI
+  PKGARCH:=all
   DEPENDS:=+luci-base +python3
 endef
 
